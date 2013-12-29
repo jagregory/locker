@@ -2,14 +2,15 @@ package locker
 
 import "github.com/coreos/go-etcd/etcd"
 
-const ttl uint64 = 5
-
 type EtcdStore struct {
 	// Etcd client used for storing locks
 	Etcd *etcd.Client
 
 	// Directory in Etcd to store locks. Default: locker
 	Directory string
+
+	// Time to live for the lock. Default: 5s
+	TTL int
 }
 
 // Gets the value of a lock. Returns LockNotFound if a lock with the name isn't held
@@ -29,7 +30,7 @@ func (s EtcdStore) Get(name string) (string, error) {
 // Aquires a named lock, or updates its TTL if it is already held
 func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
 	key := s.lockPath(name)
-	_, err := s.Etcd.CompareAndSwap(key, value, ttl, value, 0)
+	_, err := s.Etcd.CompareAndSwap(key, value, s.lockTTL(), value, 0)
 	if err == nil {
 		// success!
 		return nil
@@ -68,4 +69,12 @@ func (s EtcdStore) lockPath(name string) string {
 	}
 
 	return d + "/" + name
+}
+
+func (s EtcdStore) lockTTL() uint64 {
+	if s.TTL <= 0 {
+		return 5
+	}
+
+	return uint64(s.TTL)
 }
