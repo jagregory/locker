@@ -1,10 +1,18 @@
 package locker
 
-import "time"
+import (
+	"github.com/coreos/go-etcd/etcd"
+	"time"
+)
 
 // Lock service client
 type Client struct {
 	Store Store
+}
+
+// Creates a new client using Etcd as a store
+func EtcdNew(etcdclient *etcd.Client) Client {
+	return Client{Store: EtcdStore{etcdclient}}
 }
 
 // Get the value of a lock, returns LockNotFound if the lock doesn't exist
