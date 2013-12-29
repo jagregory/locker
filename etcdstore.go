@@ -71,6 +71,7 @@ func (s EtcdStore) lockPath(name string) string {
 	return d + "/" + name
 }
 
+// Gets the TTL of the locks being created
 func (s EtcdStore) lockTTL() uint64 {
 	if s.TTL <= 0 {
 		return 5

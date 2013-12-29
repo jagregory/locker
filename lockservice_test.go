@@ -17,65 +17,55 @@ func init() {
 	}
 }
 
-func TestConnectivity(t *testing.T) {
+func TestTwoCompetingClients(t *testing.T) {
 	client := Client{Store: EtcdStore{Etcd: etcdclient}}
 
-	stateChanges1st := make(chan StateChange, 100)
+	// create a lock using one client
+	owned1st := make(chan bool)
 	quit1st := make(chan bool)
-	go client.Lock("srv", "1st-value", stateChanges1st, quit1st)
+	go client.Lock("srv", "1st-value", owned1st, quit1st)
 
-	time.Sleep(7 * time.Second)
+	// verify we acquired the lock
+	select {
+	case <-timeout():
+		t.Fatal("Timeout")
+	case v := <-owned1st:
+		if v == false {
+			t.Fatal("Expected first client to acquire the lock")
+		}
+	}
 
-	stateChanges2nd := make(chan StateChange, 100)
+	// try to acquire the lock with a second client
+	owned2nd := make(chan bool)
 	quit2nd := make(chan bool)
-	go client.Lock("srv", "2nd-value", stateChanges2nd, quit2nd)
+	go client.Lock("srv", "2nd-value", owned2nd, quit2nd)
 
-	time.Sleep(7 * time.Second)
-
-	// first client won
-	changes := readStateChanges(stateChanges1st)
-	if len(changes) != 1 {
-		t.Errorf("Expected 1 change, got %d", len(changes))
+	// verify we failed to do that
+	select {
+	case <-timeout():
+		t.Fatal("Timeout")
+	case v := <-owned2nd:
+		if v == true {
+			t.Fatal("Expected second client to not acquire the lock")
+		}
 	}
 
-	if changes[0].State != Won {
-		t.Errorf("Expected first state change to be Won, got %d", changes[0].State)
-	}
-
-	// second client lost
-	changes = readStateChanges(stateChanges2nd)
-	if len(changes) != 1 {
-		t.Errorf("Expected 1 change, got %d", len(changes))
-	}
-
-	if changes[0].State != Lost {
-		t.Errorf("Expected first state change to be Lost, got %d", changes[0].State)
-	}
-
-	// abandon the first client, so 2nd client should grab its lock
+	// abandon the first client
 	quit1st <- true
-	time.Sleep(7 * time.Second)
 
-	changes = readStateChanges(stateChanges2nd)
-	if len(changes) != 1 {
-		t.Errorf("Expected 1 change, got %d", len(changes))
-	}
-
-	if changes[0].State != Won {
-		t.Errorf("Expected first state change to be Won, got %d", changes[0].State)
+	// verify 2nd client now acquired the lock
+	select {
+	case <-timeout():
+		t.Fatal("Timeout")
+	case v := <-owned2nd:
+		if v == false {
+			t.Fatal("Expected second client to acquire the lock after the first releases it")
+		}
 	}
 
 	quit2nd <- true
 }
 
-func readStateChanges(changes <-chan StateChange) []StateChange {
-	s := []StateChange{}
-
-	select {
-	case c := <-changes:
-		s = append(s, c)
-	default:
-	}
-
-	return s
+func timeout() <-chan time.Time {
+	return time.After(10 * time.Second)
 }

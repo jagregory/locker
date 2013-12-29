@@ -2,14 +2,14 @@ package locker
 
 import "testing"
 
-const service = "myservice"
+const name = "myservice"
 
 func TestGetOnValidLock(t *testing.T) {
 	expectedValue := "http://hostname"
 	store := &memoryStore{}
-	store.set(service, expectedValue)
+	store.set(name, expectedValue)
 
-	val, err := Client{store}.Get(service)
+	val, err := Client{store}.Get(name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func TestGetOnValidLock(t *testing.T) {
 
 func TestGetOnMissingLockReturnsLockNotFound(t *testing.T) {
 	store := &memoryStore{}
-	val, err := Client{store}.Get(service)
+	val, err := Client{store}.Get(name)
 	if err == nil {
 		t.Error("Expected an error, didn't get one")
 	}
@@ -39,21 +39,76 @@ func TestLockSetsKeyValue(t *testing.T) {
 	store := &memoryStore{}
 	client := Client{store}
 
-	stateChanges := make(chan StateChange)
+	owned := make(chan bool)
 	quit := make(chan bool)
 
-	go client.Lock(service, "host", stateChanges, quit)
+	go client.Lock(name, "host", owned, quit)
 
 	select {
-	case change := <-stateChanges:
-		if change.State != Won {
-			t.Errorf("Expected initial Won state, got %s", change.State)
+	case change := <-owned:
+		if change != true {
+			t.Errorf("Expected initial Won state, got %s", change)
 		}
 	}
 
-	v, _ := store.Get(service)
+	v, _ := store.Get(name)
 	if v != "host" {
 		t.Error("Expected key to be set")
+	}
+
+	quit <- true
+}
+
+func TestWatchReturnsInitialValue(t *testing.T) {
+	store := &memoryStore{}
+	client := Client{store}
+
+	valueChanges := make(chan string)
+	quit := make(chan bool)
+
+	store.set(name, "value")
+
+	go client.Watch(name, valueChanges, quit)
+
+	select {
+	case <-timeout():
+		t.Fatal("Timeout")
+	case change := <-valueChanges:
+		if change != "value" {
+			t.Error("Expected value to be 'value'")
+		}
+	}
+
+	quit <- true
+}
+
+func TestWatch(t *testing.T) {
+	store := &memoryStore{}
+	client := Client{store}
+
+	valueChanges := make(chan string)
+	quit := make(chan bool)
+
+	go client.Watch(name, valueChanges, quit)
+
+	select {
+	case <-timeout():
+		t.Fatal("Timeout")
+	case change := <-valueChanges:
+		if change != "" {
+			t.Error("Expected initial blank value inidicating missing lock")
+		}
+	}
+
+	store.set(name, "value")
+
+	select {
+	case <-timeout():
+		t.Fatal("Timeout")
+	case change := <-valueChanges:
+		if change != "value" {
+			t.Error("Expected value to change to 'value'")
+		}
 	}
 
 	quit <- true
@@ -75,25 +130,25 @@ func (c *memoryStore) set(key, value string) {
 	c.cache[key] = value
 }
 
-func (c *memoryStore) Get(service string) (string, error) {
+func (c *memoryStore) Get(name string) (string, error) {
 	c.ensureCache()
 
-	if v, ok := c.cache[service]; ok {
+	if v, ok := c.cache[name]; ok {
 		return v, nil
 	}
 
-	return "", LockNotFound{service}
+	return "", LockNotFound{name}
 }
 
-func (c *memoryStore) AcquireOrFreshenLock(service, value string) error {
+func (c *memoryStore) AcquireOrFreshenLock(name, value string) error {
 	c.ensureCache()
 
-	if v, ok := c.cache[service]; ok {
+	if v, ok := c.cache[name]; ok {
 		if v != value {
-			return LockDenied{service}
+			return LockDenied{name}
 		}
 	}
 
-	c.cache[service] = value
+	c.cache[name] = value
 	return nil
 }
