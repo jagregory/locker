@@ -11,9 +11,9 @@ client := locker.Client{
 	Store: locker.EtcdStore{etcdclient},
 }
 
-go client.Lock("my-service", "my-hostname", nil, nil)
+go client.Lock("key", "value", nil, nil)
 
-client.Get("my-service") // "my-hostname"
+client.Get("key") // "value"
 ```
 
 ## Listening for state changes
@@ -21,8 +21,8 @@ client.Get("my-service") // "my-hostname"
 The third argument to `Lock` is a `stateChanges` channel. When a state transition occurs a message will be dumped into this channel.
 
 ```go
-stateChanges := make(chan locker.StateChange)
-go client.Lock("my-service", "my-hostname", stateChanges, nil)
+owned := make(chan locker.StateChange)
+go client.Lock("key", "value", owned, nil)
 
 select {
 case change := <- stateChanges:
