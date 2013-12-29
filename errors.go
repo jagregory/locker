@@ -10,14 +10,6 @@ func (e LockNotFound) Error() string {
 	return fmt.Sprintf("Lock not found: %s", e.service)
 }
 
-type KeyNotFound struct {
-	key string
-}
-
-func (e KeyNotFound) Error() string {
-	return fmt.Sprintf("Key not found: %s", e.key)
-}
-
 type LockDenied struct {
 	key string
 }
