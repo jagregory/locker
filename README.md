@@ -2,6 +2,75 @@
 
 A distributed lock service client for [etcd](https://github.com/coreos/etcd).
 
+## What? Why?
+
+A distributed lock service is somewhat self-explanatory. Locking (mutexes) as a service that's distributed across a cluster.
+
+What a lock service gives you is a key-value store with locking semantics, and a mechanism for watching state changes. The distributed part of a distributed lock service is thanks to the etcd underpinnings, and it simply means your locks are persisted across a cluster.
+
+A couple of examples of what you can build with one of these services:
+
+### Name server
+
+You could use a lock service just like a DNS, except a DNS that's populated by the hosts it fronts rather than being an independent store.
+
+A service would lock its hostname record and set the value to its IP address:
+
+```go
+client.Lock("www.example.com", "10.1.1.1", nil, nil)
+```
+
+Then clients wanting to resolve the address could `client.Get("www.example.com")` and recieve `10.1.1.1`.
+
+This gets a bit more interesting when clients start watching the records and are notified of changes when they occur.
+
+```go
+valueChanges := make(chan string)
+go client.Watch("www.example.com", valueChanges, nil)
+
+select {
+case newIp := <-valueChanges:
+	redirectRequestsToNewIp(newIp)
+}
+```
+
+### Mesh/grid health monitoring
+
+Imagine a grid or mesh of services which are all polling each-other for updates. When one service goes down, we don't want the others continuing to hammer it until it's in a healthy state again. You can do this quite easily with a lock service.
+
+Each service locks a well-known record of its own when it's healthy.
+
+```go
+// in service-a
+client.Lock("service-a", "ok", nil, quit)
+
+// in service-b
+client.Lock("service-b", "ok", nil, quit)
+```
+
+When it becomes unhealthy, it kills its own lock.
+
+```go
+// in service-b
+quit <- true
+```
+
+Meanwhile, other services are watching the records of the services they depend on, and are notified when the lock dies. They can then respond to that service becoming unavailable.
+
+```go
+// in service-a
+client.Watch("service-b", changes)
+
+select {
+case change := <-changes:
+	if change == "" {
+		handleServiceBGoingOffline()
+	}
+}
+```
+
+You can take this further by making service-a then kill its own lock, leading to a cascading blackout of sorts (if that's what you want). An example of this could be when someone cuts your internet pipe, all your services gracefully shut down until the pipe comes back and then they restart.
+
 ## Usage
 
 ### Creating a lock
