@@ -12,7 +12,11 @@ type Client struct {
 
 // Creates a new client using Etcd as a store
 func EtcdNew(etcdclient *etcd.Client) Client {
-	return Client{Store: EtcdStore{etcdclient}}
+	return Client{
+		Store: EtcdStore{
+			Etcd: etcdclient,
+		},
+	}
 }
 
 // Get the value of a lock, returns LockNotFound if the lock doesn't exist

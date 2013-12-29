@@ -18,7 +18,7 @@ func init() {
 }
 
 func TestConnectivity(t *testing.T) {
-	client := Client{EtcdStore{etcdclient}}
+	client := Client{Store: EtcdStore{Etcd: etcdclient}}
 
 	stateChanges1st := make(chan StateChange, 100)
 	quit1st := make(chan bool)

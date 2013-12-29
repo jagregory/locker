@@ -5,24 +5,30 @@ import "github.com/coreos/go-etcd/etcd"
 const ttl uint64 = 5
 
 type EtcdStore struct {
+	// Etcd client used for storing locks
 	Etcd *etcd.Client
+
+	// Directory in Etcd to store locks. Default: locker
+	Directory string
 }
 
-func (s EtcdStore) Get(service string) (string, error) {
-	res, err := s.Etcd.Get("ns/"+service, false, false)
+// Gets the value of a lock. Returns LockNotFound if a lock with the name isn't held
+func (s EtcdStore) Get(name string) (string, error) {
+	res, err := s.Etcd.Get(s.lockPath(name), false, false)
 	if err == nil {
 		return res.Node.Value, nil
 	}
 
 	if etcderr, ok := err.(etcd.EtcdError); ok && etcderr.ErrorCode == 100 {
-		return "", LockNotFound{service}
+		return "", LockNotFound{name}
 	}
 
 	return "", err
 }
 
-func (s EtcdStore) AcquireOrFreshenLock(service, value string) error {
-	key := "ns/" + service
+// Aquires a named lock, or updates its TTL if it is already held
+func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
+	key := s.lockPath(name)
 	_, err := s.Etcd.CompareAndSwap(key, value, ttl, value, 0)
 	if err == nil {
 		// success!
@@ -43,13 +49,23 @@ func (s EtcdStore) AcquireOrFreshenLock(service, value string) error {
 			}
 
 			// Retry after stomping
-			return s.AcquireOrFreshenLock(service, value)
+			return s.AcquireOrFreshenLock(name, value)
 		case 101:
 			// couldn't set the key, the prevValue we gave it differs from the
 			// one in the server. Someone else has this key.
-			return LockDenied{service}
+			return LockDenied{name}
 		}
 	}
 
 	return err
+}
+
+// Gets the path to a lock in Etcd
+func (s EtcdStore) lockPath(name string) string {
+	d := s.Directory
+	if d == "" {
+		d = "locker"
+	}
+
+	return d + "/" + name
 }
