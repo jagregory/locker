@@ -2,18 +2,20 @@ package locker
 
 import "github.com/coreos/go-etcd/etcd"
 
+// EtcdStore is a backing store for Locker which uses Etcd for storage.
 type EtcdStore struct {
-	// Etcd client used for storing locks
+	// Etcd client used for storing locks.
 	Etcd *etcd.Client
 
-	// Directory in Etcd to store locks. Default: locker
+	// Directory in Etcd to store locks. Default: locker.
 	Directory string
 
-	// Time to live for the lock. Default: 5s
+	// TTL is the time-to-live for the lock. Default: 5s.
 	TTL int
 }
 
-// Gets the value of a lock. Returns LockNotFound if a lock with the name isn't held
+// Get returns the value of a lock. LockNotFound will be returned if a
+// lock with the name isn't held.
 func (s EtcdStore) Get(name string) (string, error) {
 	res, err := s.Etcd.Get(s.lockPath(name), false, false)
 	if err == nil {
@@ -27,7 +29,8 @@ func (s EtcdStore) Get(name string) (string, error) {
 	return "", err
 }
 
-// Aquires a named lock, or updates its TTL if it is already held
+// AcquireOrFreshenLock will aquires a named lock if it isn't already
+// held, or updates its TTL if it is.
 func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
 	key := s.lockPath(name)
 	_, err := s.Etcd.CompareAndSwap(key, value, s.lockTTL(), value, 0)
@@ -61,7 +64,7 @@ func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
 	return err
 }
 
-// Gets the path to a lock in Etcd
+// lockPath gets the path to a lock in Etcd. Defaults to /locker/name
 func (s EtcdStore) lockPath(name string) string {
 	d := s.Directory
 	if d == "" {
@@ -71,7 +74,8 @@ func (s EtcdStore) lockPath(name string) string {
 	return d + "/" + name
 }
 
-// Gets the TTL of the locks being created
+// lockTTL gets the TTL of the locks being stored in Etcd. Defaults to
+// 5 seconds.
 func (s EtcdStore) lockTTL() uint64 {
 	if s.TTL <= 0 {
 		return 5

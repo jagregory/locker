@@ -2,12 +2,19 @@ package locker
 
 import "github.com/coreos/go-etcd/etcd"
 
-// Lock service client
+// Client is the main locker type. Use it to manage your locks. A locker
+// Client has a Store which it uses to persist the locks.
 type Client struct {
+	// Store is what locker uses to persist locks.
 	Store Store
 }
 
-// Creates a new client using Etcd as a store
+// New creates a default locker client using Etcd as a store. It requires
+// you provide an etcd.Client, this is so locker doesn't make any dumb
+// assumptions about how your Etcd cluster is configured.
+//
+//     client := locker.New(etcdclient)
+//
 func New(etcdclient *etcd.Client) Client {
 	return Client{
 		Store: EtcdStore{
@@ -16,17 +23,21 @@ func New(etcdclient *etcd.Client) Client {
 	}
 }
 
-// Get the value of a lock, returns LockNotFound if the lock doesn't exist
+// Get returns the value of a lock. LockNotFound will be returned if a
+// lock with the name isn't held.
 func (c Client) Get(name string) (string, error) {
 	return c.Store.Get(name)
 }
 
-// A backing store for the lock service. Needs to be able to support
-// querying and an atomic compare-and-swap.
+// Store is a persistance mechaism for locker to store locks. Needs to be
+// able to support querying and an atomic compare-and-swap. Currently, the
+// only implementation of a Store is EtcdStore.
 type Store interface {
-	// Get the value of a lock, returns LockNotFound if the lock doesn't exist
+	// Get returns the value of a lock. LockNotFound will be returned if a
+	// lock with the name isn't held.
 	Get(name string) (string, error)
 
-	// Creates a lock entry if it doesn't exist, or refreshes it if it does
+	// AcquireOrFreshenLock will aquires a named lock if it isn't already
+	// held, or updates its TTL if it is.
 	AcquireOrFreshenLock(name, value string) error
 }

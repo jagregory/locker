@@ -10,9 +10,23 @@ const (
 	released lockState = iota
 )
 
-// Lock a key and set its value. If the owned channel is provided, a bool will be
-// pushed whenever our ownership of the lock changes. Pushing true into the quit
-// channel will stop the locker and let the lock expire if we own it.
+// Lock will create a lock for a key and set its value. If the owned
+// channel is provided a bool will be pushed whenever our ownership of
+// the lock changes. Pushing true into the quit channel will stop the
+// locker from refreshing the lock and let it expire if we own it.
+//
+//     owned := make(chan bool)
+//
+//     go client.Lock("my-service", "http://10.0.0.1:9292", owned, nil)
+//
+//     for {
+//       select {
+//       case v := <-owned:
+//         fmt.Printf("Lock ownership changed: %t\n", v)
+//       }
+//     }
+//
+// Lock is a blocking call, so it's recommended to run it in a goroutine.
 func (c Client) Lock(name, value string, owned chan<- bool, quit <-chan bool) error {
 	lastState := unknown
 	tick := time.Tick(time.Second * 3)
@@ -38,7 +52,8 @@ func (c Client) Lock(name, value string, owned chan<- bool, quit <-chan bool) er
 	panic("unreachable")
 }
 
-// Update the lock node in the cluster.
+// updateNode will update the lock node in the cluster, effectively just
+// updating the TTL of the key and ensuring our value is still in it.
 func (c Client) updateNode(name, value string) (lockState, error) {
 	if err := c.Store.AcquireOrFreshenLock(name, value); err != nil {
 		if _, ok := err.(LockDenied); ok {
