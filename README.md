@@ -1,5 +1,7 @@
 # locker
 
+[![GoDoc](https://godoc.org/github.com/jagregory/locker?status.png)](https://godoc.org/github.com/jagregory/locker)
+
 A distributed lock service client for [etcd](https://github.com/coreos/etcd).
 
 ## What? Why?
