@@ -1,6 +1,9 @@
 package locker
 
-import "github.com/coreos/go-etcd/etcd"
+import (
+	"github.com/coreos/go-etcd/etcd"
+	"github.com/coreos/go-log/log"
+)
 
 // EtcdStore is a backing store for Locker which uses Etcd for storage.
 type EtcdStore struct {
@@ -17,35 +20,44 @@ type EtcdStore struct {
 // Get returns the value of a lock. LockNotFound will be returned if a
 // lock with the name isn't held.
 func (s EtcdStore) Get(name string) (string, error) {
+	log.Infof("GET %s", name)
 	res, err := s.Etcd.Get(s.lockPath(name), false, false)
 	if err == nil {
 		return res.Node.Value, nil
 	}
 
 	if etcderr, ok := err.(etcd.EtcdError); ok && etcderr.ErrorCode == 100 {
+		log.Errorf("GET %s failed: Lock not found", name)
 		return "", LockNotFound{name}
 	}
 
+	log.Errorf("GET %s failed: %s", name, err)
 	return "", err
 }
 
 // AcquireOrFreshenLock will aquires a named lock if it isn't already
 // held, or updates its TTL if it is.
 func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
+	log.Infof("ACQUIRE %s", name)
 	if err := s.ensureLockDirectoryCreated(); err != nil {
+		log.Errorf("ACQUIRE %s failed ensuring lock directory exists: %s", name, err)
 		return err
 	}
 
 	key := s.lockPath(name)
+
+	log.Debugf("ACQUIRE %s CompareAndSwap on %s", name, key)
 	_, err := s.Etcd.CompareAndSwap(key, value, s.lockTTL(), value, 0)
 	if err == nil {
 		// success!
 		return nil
 	}
 
+	log.Debugf("ACQUIRE %s CompareAndSwap on %s failed (%s) trying to recover", name, key, err)
 	if etcderr, ok := err.(etcd.EtcdError); ok {
 		switch etcderr.ErrorCode {
 		case 100:
+			log.Debugf("ACQUIRE %s CompareAndSwap on %s key didn't exist, trying to force set it", name, key)
 			// key doesn't exist, set it. This seems to be odd behaviour for
 			// CompareAndSwap. Surely, if it doesn't exist we should just set
 			// it as part of CompareAndSwap. Potential for a race condition here,
@@ -53,14 +65,17 @@ func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
 			// stomp on it with our dumb Set.
 			if _, err := s.Etcd.Set(key, value, 1); err != nil {
 				// wasn't able to force-set the key, no idea what happened
+				log.Errorf("ACQUIRE %s Set on %s key failed", name, key, err)
 				return err
 			}
 
 			// Retry after stomping
+			log.Debugf("ACQUIRE %s retrying", name)
 			return s.AcquireOrFreshenLock(name, value)
 		case 101:
 			// couldn't set the key, the prevValue we gave it differs from the
 			// one in the server. Someone else has this key.
+			log.Errorf("ACQUIRE %s CompareAndSwap on %s key failed, lock denied", name, key)
 			return LockDenied{name}
 		}
 	}
