@@ -32,6 +32,10 @@ func (s EtcdStore) Get(name string) (string, error) {
 // AcquireOrFreshenLock will aquires a named lock if it isn't already
 // held, or updates its TTL if it is.
 func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
+	if err := s.ensureLockDirectoryCreated(); err != nil {
+		return err
+	}
+
 	key := s.lockPath(name)
 	_, err := s.Etcd.CompareAndSwap(key, value, s.lockTTL(), value, 0)
 	if err == nil {
@@ -64,14 +68,34 @@ func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
 	return err
 }
 
-// lockPath gets the path to a lock in Etcd. Defaults to /locker/name
-func (s EtcdStore) lockPath(name string) string {
-	d := s.Directory
-	if d == "" {
-		d = "locker"
+// directory will return the provided Directory or locker if nil.
+func (s EtcdStore) directory() string {
+	if s.Directory == "" {
+		return "locker"
 	}
 
-	return d + "/" + name
+	return s.Directory
+}
+
+// ensureLockDirectoryCreated tries to create the root locker directory in
+// etcd. This is to compensate for etcd sometimes getting upset when all
+// the nodes expire.
+func (s EtcdStore) ensureLockDirectoryCreated() error {
+	_, err := s.Etcd.CreateDir(s.directory(), 0)
+
+	if eerr, ok := err.(*etcd.EtcdError); ok {
+		if eerr.ErrorCode == 105 {
+			return nil // key already exists, cool
+		}
+	}
+
+	// not an etcderr, or a etcderror we want to propagate, or there was no error
+	return err
+}
+
+// lockPath gets the path to a lock in Etcd. Defaults to /locker/name
+func (s EtcdStore) lockPath(name string) string {
+	return s.directory() + "/" + name
 }
 
 // lockTTL gets the TTL of the locks being stored in Etcd. Defaults to
