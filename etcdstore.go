@@ -26,7 +26,7 @@ func (s EtcdStore) Get(name string) (string, error) {
 		return res.Node.Value, nil
 	}
 
-	if etcderr, ok := err.(etcd.EtcdError); ok && etcderr.ErrorCode == 100 {
+	if etcderr, ok := err.(*etcd.EtcdError); ok && etcderr.ErrorCode == 100 {
 		log.Errorf("GET %s failed: Lock not found", name)
 		return "", LockNotFound{name}
 	}
@@ -54,7 +54,7 @@ func (s EtcdStore) AcquireOrFreshenLock(name, value string) error {
 	}
 
 	log.Debugf("ACQUIRE %s CompareAndSwap on %s failed (%s) trying to recover", name, key, err)
-	if etcderr, ok := err.(etcd.EtcdError); ok {
+	if etcderr, ok := err.(*etcd.EtcdError); ok {
 		switch etcderr.ErrorCode {
 		case 100:
 			log.Debugf("ACQUIRE %s CompareAndSwap on %s key didn't exist, trying to force set it", name, key)
